@@ -22,11 +22,14 @@
         function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
         const settingsModal = document.getElementById('settings-modal');
+        let proxyAvailable = false;
         function refreshKeyDot() {
-            document.getElementById('key-dot').className = 'w-2 h-2 rounded-full ' + (getSetting('apiKey') ? 'bg-emerald-400' : 'bg-rose-500');
+            document.getElementById('key-dot').className = 'w-2 h-2 rounded-full ' + ((getSetting('apiKey') || proxyAvailable) ? 'bg-emerald-400' : 'bg-rose-500');
+            document.getElementById('proxy-note').classList.toggle('hidden', !proxyAvailable);
         }
         function openSettings() {
             document.getElementById('api-key-input').value = getSetting('apiKey');
+            document.getElementById('access-input').value = getSetting('accessCode');
             document.getElementById('model-input').value = getSetting('model') || 'gemini-2.5-flash';
             settingsModal.classList.remove('hidden'); settingsModal.classList.add('flex');
         }
@@ -35,10 +38,13 @@
         document.getElementById('settings-cancel').addEventListener('click', closeSettings);
         document.getElementById('settings-save').addEventListener('click', () => {
             setSetting('apiKey', document.getElementById('api-key-input').value.trim());
+            setSetting('accessCode', document.getElementById('access-input').value.trim());
             setSetting('model', document.getElementById('model-input').value);
             refreshKeyDot(); closeSettings(); showToast('Pengaturan tersimpan.', 'success');
         });
         refreshKeyDot();
+        // Deteksi backend proxy: GET ke /api/generate dijawab 405 jika proxy ada.
+        fetch('/api/generate').then(r => { proxyAvailable = r.status === 405; refreshKeyDot(); }).catch(() => {});
 
         // --- Fungsi Notifikasi Toast (Pengganti alert) ---
         function showToast(message, type = 'info') {
@@ -87,6 +93,40 @@
             document.body.removeChild(tempTextarea);
         }
 
+        function downscaleImage(dataUrl, maxSide, quality) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => {
+                    const s = Math.min(1, maxSide / Math.max(img.width, img.height));
+                    const c = document.createElement('canvas');
+                    c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+                    const ctx = c.getContext('2d');
+                    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, c.width, c.height);
+                    ctx.drawImage(img, 0, 0, c.width, c.height);
+                    resolve(c.toDataURL('image/jpeg', quality));
+                };
+                img.onerror = reject;
+                img.src = dataUrl;
+            });
+        }
+
+        // --- Panggilan lewat backend proxy (API key tersimpan di server) ---
+        async function generateViaProxy(productName, affiliateLink, style, ratio, base64Img, mimeType) {
+            let response;
+            try {
+                response = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-access-code': getSetting('accessCode') },
+                    body: JSON.stringify({ productName, affiliateLink, style, ratio, image: base64Img, mimeType })
+                });
+            } catch (_) { throw new Error('NO_API_KEY'); }
+            if (response.status === 404 || response.status === 405) throw new Error('NO_API_KEY'); // tidak ada backend
+            let data = {};
+            try { data = await response.json(); } catch (_) {}
+            if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+            return data;
+        }
+
         // --- Handler Upload Gambar ---
         imageInput.addEventListener('change', function(e) {
             const file = e.target.files[0];
@@ -108,11 +148,15 @@
                 const fullDataUrl = event.target.result;
                 imagePreview.src = fullDataUrl;
                 // Simpan base64 murni tanpa prefix data:image/...;base64,
-                uploadedImageBase64 = fullDataUrl.split(',')[1];
-                
-                uploadPlaceholder.classList.add('hidden');
-                imagePreviewContainer.classList.remove('hidden');
-                showToast('Foto produk berhasil dimuat!', 'success');
+                uploadedImageBase64 = null;
+                // Perkecil & kompres agar muat di batas body server (Vercel 4,5MB) dan hemat token
+                downscaleImage(fullDataUrl, 1280, 0.85).then(small => {
+                    uploadedImageBase64 = small.split(',')[1];
+                    uploadedImageMimeType = 'image/jpeg';
+                    uploadPlaceholder.classList.add('hidden');
+                    imagePreviewContainer.classList.remove('hidden');
+                    showToast('Foto produk berhasil dimuat!', 'success');
+                }).catch(() => showToast('Gagal membaca gambar.', 'error'));
             };
             reader.readAsDataURL(file);
         });
@@ -120,7 +164,7 @@
         // --- Panggilan Gemini API (Multimodal + Structured JSON Output) ---
         async function generateAdConceptWithGemini(productName, affiliateLink, style, ratio, base64Img, mimeType) {
             const apiKey = getSetting('apiKey');
-            if (!apiKey) throw new Error('NO_API_KEY');
+            if (!apiKey) return generateViaProxy(productName, affiliateLink, style, ratio, base64Img, mimeType);
             const model = getSetting('model') || 'gemini-2.5-flash';
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 

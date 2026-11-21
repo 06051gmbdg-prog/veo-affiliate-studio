@@ -410,6 +410,9 @@
             <p class="text-xs text-slate-400 mb-4">Buat key gratis di <a class="text-brand-400 underline" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>. Key hanya disimpan di browser Anda (localStorage).</p>
             <label for="api-key-input" class="block text-xs font-medium text-slate-400 mb-1.5">Gemini API Key</label>
             <input type="password" id="api-key-input" autocomplete="off" placeholder="AIza..." class="w-full px-3 py-2.5 mb-3 bg-slate-900/80 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-brand-500">
+            <label for="access-input" class="block text-xs font-medium text-slate-400 mb-1.5">Kode Akses <span class="text-slate-500">(hanya jika server meminta)</span></label>
+            <input type="password" id="access-input" autocomplete="off" placeholder="Opsional" class="w-full px-3 py-2.5 mb-3 bg-slate-900/80 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-brand-500">
+            <p id="proxy-note" class="hidden text-xs text-emerald-400 mb-3"><i class="fa-solid fa-circle-check"></i> Server terdeteksi: API key bisa dikosongkan.</p>
             <label for="model-input" class="block text-xs font-medium text-slate-400 mb-1.5">Model</label>
             <select id="model-input" class="w-full px-3 py-2.5 mb-5 bg-slate-900/80 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-brand-500">
                 <option value="gemini-2.5-flash">gemini-2.5-flash (disarankan)</option>
